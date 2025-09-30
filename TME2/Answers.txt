@@ -1,0 +1,6 @@
+TME2 - NGUYEN Duc Vinh (21523430)
+
+---1.1---
+We can create algorithm that calculates 1 line of pixels at a time
+
+---1.2---
