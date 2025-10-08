@@ -7,7 +7,8 @@
 #include <math.h>               /* compile with -lm */
 #include <sys/time.h>
 #include <arpa/inet.h>          /* htonl */
-
+#include <mpi.h>
+#include <string.h>
 #include "rasterfile.h"
 
 char info[] = "\
@@ -126,7 +127,10 @@ int main(int argc, char **argv)
 		fprintf(stderr, "%s\n", info);
 		return 1;
 	}
-
+  int rank, size;
+  MPI_Init(&argc, &argv);
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &size);
 	/* Default values for the fractal */
 	double xmin = -2;     /* Domain of computation, in the complex plane */
 	double ymin = -2;
@@ -171,9 +175,43 @@ int main(int argc, char **argv)
 
 	/* start timer */
 	double start = wallclock_time();
+  int nb_pixel = (w * h + (size - 1)) / size;
+  fprintf(stdout, "Size if nb_pixels: %d\n", nb_pixel);
+  unsigned char * sub_image = malloc (nb_pixel);
+  double y = ymin ;
+  MPI_Scatter (image, nb_pixel, MPI_CHAR, sub_image, nb_pixel, MPI_CHAR, 0, MPI_COMM_WORLD);
 
-	/* Process the grid point by point */
-	double y = ymin;
+  double x = xmin;
+
+  int k = 0;
+  for (int i = rank * nb_pixel; i <  nb_pixel * (1 + rank); i++){
+    if (i % w == 0){
+      x = xmin;
+      y = ymin + yinc * (i / w);
+    }else{
+      x = xmin + xinc * (i % w);
+    }
+    sub_image[k++] = xy2color(x, y, depth);
+  }
+/*   for (int i = 0; i < nb_pixel; i++){
+    if (i % w == 0){
+      x = xmin;
+      y = ymin + yinc *(rank * h / size);
+    }else{
+      x = xmin + xinc * (i % w);
+    }
+    sub_image[i] = xy2color(x, y, depth);
+  }  */
+
+  //fprintf(stdout, "Entered 5\n");
+  //fprintf(stdout, "Size of sub_image in process #%d is: %ld\n", rank, strlen(sub_image));
+  /* float *sub_images = NULL;
+  if (rank == 0) {
+    sub_images = malloc(sizeof(unsigned char*) * w*h/8 * size);
+  } */
+  MPI_Gather(sub_image, nb_pixel, MPI_CHAR, image, nb_pixel, MPI_CHAR, 0, MPI_COMM_WORLD);
+
+	/* double y = ymin;
 	for (int i = 0; i < h; i++) {
 		double x = xmin;
 		for (int j = 0; j < w; j++) {
@@ -181,13 +219,16 @@ int main(int argc, char **argv)
 			x += xinc;
 		}
 		y += yinc;
-	}
+	} */
 
 	/* stop timer */
 	double end = wallclock_time();
-	fprintf(stderr, "Total computing time: %g sec\n", end - start);
+	fprintf(stderr, "Total computing time if processor %d: %g sec\n",rank,  end - start);
 
 	/* Save the image in the output file "mandel.ras" */
-	save_rasterfile("mandel.ras", w, h, image);
+  if (rank == 0)
+	  save_rasterfile("mandel2.ras", w, h, image);
+  MPI_Finalize();
+  
 	return 0;
 }
